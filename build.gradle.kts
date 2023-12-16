@@ -13,6 +13,9 @@ repositories {
 
 dependencies {
     testImplementation(kotlin("test"))
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.0")
+    implementation ("org.jetbrains.kotlinx:kotlinx-coroutines-android:0.30.1")
+    implementation ("org.jetbrains.kotlin:kotlin-reflect:1.5.10")
 }
 
 tasks.test {
