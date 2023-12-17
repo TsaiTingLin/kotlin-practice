@@ -11,38 +11,49 @@ import kotlinx.coroutines.flow.*
  * [reference_3](https://blog.csdn.net/qq_30382601/article/details/121825461)
  * flatMapConcat, flatMapMerge, flatMapLatest
  */
-@OptIn(FlowPreview::class)
 fun main() = runBlocking<Unit> {
-    val persistentFlow = MutableSharedFlow<Int>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
-    val instantFlow = MutableSharedFlow<Int>()
+    val delayedDataFlow = MutableSharedFlow<String>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+    val realtimeDataFlow = MutableSharedFlow<String>(replay = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     launch {
-        listOf(88888,99999).forEach {
+        listOf("delayed-data_1", "delayed-data_2").forEach {
             delay(500)
-            persistentFlow.emit(it)
+            delayedDataFlow.emit(it)
         }
     }
-
     launch {
         (1..100).forEach {
-            instantFlow.emit(it)
+            realtimeDataFlow.emit("real-time-data_$it")
             delay(100)
         }
     }
-
-//    launch {
-//        flowRepeat(10, 10)
-//            .flatMapMerge(2){ flowRepeat(2, 3).processData(it) }
-//            .collect{
-//                println(it)
-//            }
-//    }
+    val flow = flow {
+        repeat(2) {
+            emit("delayed-data_$it")
+            delay(10)
+        }
+    }
+    // Situation A
     launch {
-        flowOf(persistentFlow, flowRepeat(2, 2), flowRepeat(3,2), flowRepeat(4, 2))
-            .flattenMerge(1)
-            .collect { println(it) }
+        realtimeDataFlow
+            .flatMapConcat{
+                delayedDataFlow.processData(it)
+            }
+            .collect {
+                println(it)
+            }
+    }
+
+    // Situation B
+    launch {
+        realtimeDataFlow
+            .flatMapConcat{
+                flow.processData(it)
+            }
+            .collect {
+                println(it)
+            }
     }
 }
-
 
 fun <T> flowRepeat(value: T, times: Int) = flow {
     repeat(times) {
@@ -50,6 +61,48 @@ fun <T> flowRepeat(value: T, times: Int) = flow {
         delay(10)
     }
 }.flowOn(Dispatchers.Default)
+
+fun Flow<String>.processData(item: String) = this.map {
+    "$item $it"
+}
+
+
+
+// break down the source code
+fun Flow<String>.flatMapConcat(transform:suspend (value:String)->Flow<String>):Flow<String>{
+    return this.map { transform(it) }.flattenConcat()
+}
+fun Flow<Flow<String>>.flattenConcat(): Flow<String> = flow {
+    collect { subFlow ->
+        println(subFlow.hashCode())
+        subFlow.collect(this)
+    }
+}
+
+fun flatMapConcatExample() {
+    GlobalScope.launch {
+        launch {
+            flowRepeat(10, 10)
+                .flatMapConcat { flowRepeat(2, 3).processData(it) }
+                .collect {
+                    println(it)
+                }
+        }
+    }
+}
+
+fun test() {
+    GlobalScope.launch {
+        flowOf(flowRepeat(2, 2), flowRepeat(2, 2), flowRepeat(3, 2), flowRepeat(4, 2))
+            .flattenMerge(1)
+            .collect { println(it) }
+    }
+}
+
+
+
+
+
 
 
 fun Flow<Int>.processData(item: Int) = this.map {
